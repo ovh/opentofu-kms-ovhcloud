@@ -1,0 +1,152 @@
+name: build-and-test
+on: [ push ]
+integrations: [ artifactory-enablers-kms ]
+
+vars:
+  - opentofu-kms-ovhcloud
+
+jobs:
+  lint:
+    runs-on: KMSAAS/stash_ovh_net/cen/kmsaas-cds-workers/kms-base-go
+    steps:
+      - uses: actions/checkout
+        id: checkout
+      - id: lint
+        run: make lint
+
+  build:
+    runs-on: KMSAAS/stash_ovh_net/cen/kmsaas-cds-workers/kms-base-go
+    needs:
+      - lint
+    steps:
+      - uses: actions/checkout
+        id: checkout
+      - id: build
+        run: |
+          make build
+          tar -cvzf opentofu-kms-ovhcloud.tar.gz -C build opentofu-kms-ovhcloud
+      - uses: actions/uploadArtifact
+        with:
+          path: opentofu-kms-ovhcloud.tar.gz
+
+  test:
+    runs-on: KMSAAS/stash_ovh_net/cen/kmsaas-cds-workers/kms-base-go
+    needs:
+      - build
+    steps:
+      - uses: actions/checkout
+        id: checkout
+      - id: test
+        run: make test
+      - uses: actions/uploadArtifact
+        with:
+          path: build/junit.xml
+      - uses: actions/uploadArtifact
+        with:
+          path: build/coverage.html
+
+  integration-test:
+    runs-on: KMSAAS/stash_ovh_net/cen/kmsaas-cds-workers/kms-base-go
+    needs:
+      - test
+    steps:
+      - uses: actions/checkout
+        id: checkout
+
+      - id: setup-credentials
+        run: |-
+          #!/bin/bash
+          set -euo pipefail
+          cat > $PWD/cert.pem <<EOF
+          ${{vars.opentofu-kms-ovhcloud.KMS_RESTAPI_CERT}}
+          EOF
+          cat > $PWD/key.pem <<EOF
+          ${{vars.opentofu-kms-ovhcloud.KMS_RESTAPI_KEY}}
+          EOF
+          chmod 600 $PWD/cert.pem $PWD/key.pem
+
+      - id: integration-test
+        run: |-
+          #!/bin/bash
+          set -euo pipefail
+          export KMS_KEY_ID="${{vars.opentofu-kms-ovhcloud.KMS_KEY_ID}}"
+          export KMS_RESTAPI_ENDPOINT="${{vars.opentofu-kms-ovhcloud.KMS_RESTAPI_ENDPOINT}}"
+          export KMS_RESTAPI_CERT="$PWD/cert.pem"
+          export KMS_RESTAPI_KEY="$PWD/key.pem"
+          trap 'rm -f $PWD/cert.pem $PWD/key.pem' EXIT
+          make integration-test
+
+      - uses: actions/uploadArtifact
+        with:
+          path: build/integration-junit.xml
+      - uses: actions/uploadArtifact
+        with:
+          path: build/integration-coverage.html
+      - uses: actions/uploadArtifact
+        with:
+          path: build/integration-coverage.out
+      - uses: actions/uploadArtifact
+        with:
+          path: build/integration-test-results.json
+
+  e2e-test:
+    runs-on: KMSAAS/stash_ovh_net/cen/kmsaas-cds-workers/kms-base-go
+    needs:
+      - integration-test
+    steps:
+      - uses: actions/checkout
+        id: checkout
+
+      - name: Download opentofu-kms-ovhcloud artifact
+        uses: actions/downloadArtifact
+        with:
+          name: opentofu-kms-ovhcloud.tar.gz
+          path: .
+
+      - id: setup-credentials
+        run: |-
+          #!/bin/bash
+          set -euo pipefail
+          cat > $PWD/cert.pem <<EOF
+          ${{vars.opentofu-kms-ovhcloud.KMS_RESTAPI_CERT}}
+          EOF
+          cat > $PWD/key.pem <<EOF
+          ${{vars.opentofu-kms-ovhcloud.KMS_RESTAPI_KEY}}
+          EOF
+          chmod 600 $PWD/cert.pem $PWD/key.pem
+
+      - id: setup-tools
+        run: |-
+          #!/bin/bash
+          set -euo pipefail
+          tar -xvzf opentofu-kms-ovhcloud.tar.gz
+          chmod +x opentofu-kms-ovhcloud
+
+      - id: e2e-test
+        run: |-
+          #!/bin/bash
+          set -euo pipefail
+          export KMS_KEY_ID="${{vars.opentofu-kms-ovhcloud.KMS_KEY_ID}}"
+          export KMS_RESTAPI_ENDPOINT="${{vars.opentofu-kms-ovhcloud.KMS_RESTAPI_ENDPOINT}}"
+          export KMS_RESTAPI_CERT="$PWD/cert.pem"
+          export KMS_RESTAPI_KEY="$PWD/key.pem"
+          trap 'rm -f $PWD/cert.pem $PWD/key.pem' EXIT
+          export PATH="$PATH:$(pwd)"
+          chmod +x scripts/run-e2e.sh
+          ./scripts/run-e2e.sh
+
+  release:
+    runs-on: KMSAAS/stash_ovh_net/cen/kmsaas-cds-workers/kms-base-go
+    needs:
+      - e2e-test
+    steps:
+      - uses: actions/checkout
+        id: checkout
+      - name: Download opentofu-kms-ovhcloud.tar.gz artifact
+        uses: actions/downloadArtifact
+        with:
+          name: opentofu-kms-ovhcloud.tar.gz
+          path: .
+      - uses: actions/artifactoryRelease
+        with:
+          artifacts: opentofu-kms-ovhcloud.tar.gz
