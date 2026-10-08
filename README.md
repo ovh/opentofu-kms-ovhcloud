@@ -188,6 +188,45 @@ terraform {
 }
 ```
 
+## Known issues
+
+### Cryptographic usage is not allowed: WrapKey
+
+If, during a `tofu init` execution command, you have this kind of output:
+
+```
+$ tofu init
+╷
+│ Error: Unable to fetch encryption key data
+│
+│ key_provider.external.ovhcloud failed with error: the external command exited with a non-zero exit code (exit status 1)
+│
+│ Stderr:
+│ -------
+│ 2026/10/08 13:01:32 failed to provide key: failed to generate data key (okms_id=305db938-aaaa-bbbb-cccc-3a0a29291661, key_id=16491edd-aaaa-bbbb-cccc-xxxxxxxxx): HTTP request failed - HTTP Status: 400,
+│ Bad Request
+│ Cryptographic usage is not allowed: WrapKey.
+│ ID="", Request-ID:"OKMS.b821720a-aaaa-bbbb-cccc-xxxxxxxxxxxxxxx", Code=17072138, System=CCM, Component=DSK Manager, Category=Bad Argument
+│
+╵
+
+╷
+│ Error: Unable to fetch encryption key data
+│
+│ key_provider.external.ovhcloud failed with error: the external command exited with a non-zero exit code (exit status 1)
+│
+│ Stderr:
+│ -------
+│ 2026/10/08 13:01:32 failed to provide key: failed to generate data key (okms_id=305db938-aaaa-bbbb-cccc-xxxxxxxxxxx, key_id=16491edd-aaaa-bbbb-cccc-xxxxxxxxx): HTTP request failed - HTTP Status: 400,
+│ Bad Request
+│ Cryptographic usage is not allowed: WrapKey.
+│ ID="", Request-ID:"OKMS.f95a30d6-aaaa-bbbb-cccc-e1d1bd806d0b", Code=17072138, System=CCM, Component=DSK Manager, Category=Bad Argument
+│
+╵
+```
+
+That means that you're Service Key don't have the good rights. Create another one with "Wrap/Unwrap" usage (instead of "Encrypt/Decrypt").
+
 ## Related links
 
 * Contribute: https://github.com/ovh/opentofu-kms-ovhcloud/blob/main/CONTRIBUTING.md
